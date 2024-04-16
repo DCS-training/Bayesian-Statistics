@@ -38,6 +38,7 @@ Next, you'll need to install a few R packages.
 We're going to be using `brms`, which is an R interface to fit Bayesian models using a backend language called Stan. 
 You don't need to know anything about Stan to use `brms`, and the syntax should be very familiar if you're used to `lme4`!
 The `bayesplot` package has some nice built-in functions for visualising distributions.
+The `extraDistr` package includes some useful functions (density, distribution, quantile and random generation) for a number of distributions that are not available in base R.
 If you don't already use `tidyverse`, you'll need to install that too; we'll be using it for general data wrangling.
 
 Open RStudio and run the following in the Console:
@@ -45,6 +46,7 @@ Open RStudio and run the following in the Console:
 ```
 install.packages("brms")
 install.packages("bayesplot")
+install.packages("extraDistr")
 install.packages("tidyverse")
 ```
 
