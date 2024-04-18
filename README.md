@@ -65,6 +65,6 @@ You should see a few lines of indecipherable system code in the Console. As long
 
 We're going to be using this wonderful tutorial created by [Elizabeth Pankratz](https://elizabethpankratz.github.io/) for the theoretical introduction (Week 1): [Bayes, stat! (Day 1)](https://elizabethpankratz.github.io/bayes_stat/day1/learningobj.html). 
 
-Materials for the practical, hands-on class will be posted in this repo ahead of Week 2.
+Materials for the practical class (Week 2) are in the folder `practical`: you can download this entire folder to work through the RMarkdown notebook.
 
 [![License: CC BY-NC 4.0](https://licensebuttons.net/l/by-nc/4.0/80x15.png)](https://creativecommons.org/licenses/by-nc/4.0/)
