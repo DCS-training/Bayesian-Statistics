@@ -1,0 +1,455 @@
+---
+title: "CDCS: Introduction to Bayesian Statistics"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # displays all code chunks in html file
+knitr::opts_knit$set(root.dir = here::here()) # sets working dir to proj dir
+
+# Attach packages
+library(tidyverse)
+library(brms)
+library(bayesplot)
+library(extraDistr)
+
+# ggplot settings
+theme_set(theme_bw())
+```
+
+# Data wrangling and setup
+
+To get started, we're going to have a look at the model-building workflow using an example dataset. But instead of using the usual `Iris` or `mtcars`, we're going to use something much cuter: `palmerpenguins`. This dataset contains measurements for three penguin species observed on three islands in the Palmer Archipelago, Antarctica (the image below will show up if you switch to visual editor in RStudio or open the HTML document in your browser).
+
+![The Palmer Archipelago penguins. Artwork by @allison_horst.](penguins.png){width="75%"}
+
+Run this chunk to install the package and load the dataset.
+
+```{r}
+install.packages("palmerpenguins")
+penguins <- palmerpenguins::penguins
+```
+
+First, let's get an idea of what's in this dataset. You can use either `glimpse()` or `str()` to get an overview, but I prefer `str()` because I find it easier to see what levels/ranges are in each column. You can also run `?penguins` to get more information about what the different columns mean, but I think they're all pretty intuitive.
+
+```{r}
+str(penguins)
+```
+
+Null values are a pain for data visualisation and model fitting, so let's see how many of those we've got.
+
+```{r}
+colSums(is.na(penguins))
+```
+
+In the real world, I'd probably want to be selective about only dropping rows where columns I actually cared about contained null values, but for ease here I'm just going to drop every row that contains at least 1 null value: since the biggest number in the table above is 11, this is still going to leave us with 333 rows.
+
+```{r}
+penguins <- penguins %>% drop_na()
+```
+
+# The model-building workflow
+
+There's a few things we could model in this dataset, but I've picked an easy research question to get us started: does flipper length depend on sex?
+
+To set us up to answer this question, I'm first going to add a new column to the dataset which centres the predictor using ±0.5 sum coding (for more on contrast coding, see [here](https://vasishth.github.io/bayescogsci/book/ch-contr.html)). There are other ways to set contrasts without creating whole new columns (e.g. using `contr.sum(2)/2`) but it can be easier to interpret model output if you force yourself to be more explicit. If you don't specify contrasts, `brms` will default to treatment coding (like `lme4`).
+
+```{r}
+penguins <- penguins %>% 
+  mutate(sex_contrsum = ifelse(sex=="male", -0.5, 0.5))
+```
+
+## Choosing a likelihood
+
+If you've done linear modelling before, you've probably already encountered the concept of “model family” e.g. you can fit a basic linear model to continuous outcome data, but you need a logistic model for binary outcome data. The same applies in Bayesian statistics: we select a likelihood function based on the kinds of values that the outcome variable can take on.
+
+To help us choose a likelihood function, let's first visualise the flipper length data. N.B. I'm also splitting the plot by species just to make it a bit cleaner, but we won't be including species in the model right away (because doing so requires us to think a bit harder about contrast coding, and this is not a class on contrast coding, so I don't want to spend too long on that!).
+
+```{r}
+penguins %>% 
+  ggplot(aes(x=flipper_length_mm)) +
+  facet_wrap(~species) +
+  geom_histogram(aes(fill=sex), position="identity", alpha=0.5)
+```
+
+If I was being fairly liberal, I'd say that these distributions look normal-ish. I say "ish" because flipper length obviously can't be negative, so *technically* these are not normal distributions. But they have roughly the right kind of shape (i.e. not super skewed) and it's definitely continuous data (rather than e.g. binary). This might not feel particularly satisfying, but it's pretty standard practice to use a normal likelihood function in these kinds of cases, much as you would probably just fit a basic linear model without transforming the data if you were running frequentist stats. So try not to worry too much about it!
+
+If we're using a normal likelihood, this means we can express flipper length (*F*) as follows (hover over to see the equation in source mode; it will display properly in visual mode and in the HTML document):
+
+$F \sim Normal(\mu, \sigma)$
+
+Or, in words: flipper length is distributed according to a normal distribution with mean $\mu$ and standard deviation $\sigma$.
+
+## Choosing priors
+
+Our likelihood function contains two parameters that define its shape: $\mu$ (the mean) and $\sigma$ (the standard deviation). We also want our model to estimate one other parameter: the effect of sex on flipper length, or in other words, the difference between male and female penguins' mean flipper length.
+
+**Every parameter in a Bayesian model needs to have a prior** that tells the model what kinds of values are plausible for that parameter to take on. So how do we choose priors for these three parameters? There are many different schools of thought, but these are the basic types of priors you'll usually encounter:
+
+-   **Flat/uninformative priors:** Priors that treat all values within a wide range as equally plausible (i.e. a uniform distribution).
+-   **Weakly regularising priors:** Priors that are fairly broad, allowing a wide range of possible values, but down-weighting or ruling out impossibly extreme values.
+-   **Principled/informative priors:** Priors that are quite narrow, reflecting more *a priori* certainty about plausible values e.g. from existing domain knowledge.
+
+Weaker/broader priors are generally less philosophically alarming to researchers trained in frequentist statistics, and these are likely to be the people reviewing your papers. So unless you can point to a lot of prior knowledge in your particular domain to justify very informative priors, I would generally recommend regularising priors.
+
+Let's step through each of the parameters in turn.
+
+### A prior for mu (mean flipper length)
+
+Unless you're a penguin expert, you may not have strong intuitions about how long flippers can be. However, we can use common sense to set some sensible lower/upper bounds on the mean. For example:
+
+-   Flippers must *have a length*, which means that mean length must be greater than 0.
+-   Flippers must be shorter than the penguin itself, and even the biggest penguins in the world are shorter than an average human, so e.g. a mean length of 2000mm (2m) would be implausible -- even if there was one monstrous penguin who had such long flippers, they'd definitely be an outlier!
+
+So we could start off with something incredibly broad with these couple of very minor restrictions e.g. a uniform prior with a lower bound of 50 (5cm) and an upper bound of 1000 (1m).
+
+To get an idea of what kind of values a particular prior would permit your parameter to take, you can use a `q` function (formally, the inverse cumulative distribution function): this is one of a family of functions (known as the dpqr functions) that comes with every distribution. All `q` functions take as their first argument a probability or vector of probabilities, followed by all the parameters required to define the distribution. Since we'll be looking at 95% credible intervals for each of our parameter values, the probabilities we want to pass in are always 0.025 (the 2.5th percentile) and 0.975 (the 97.5th percentile): the area between these two percentiles comprises 95% of the distribution.
+
+In this case, we want the `qunif` function for the uniform distribution. The uniform distribution has two parameters: min (the lower bound) and max (the upper bound).
+
+```{r}
+qunif(c(0.025, 0.975), min = 10, max = 1000)
+```
+
+So this output tells us that such a prior defines an expectation that mean flipper length should be between 34.75mm and 975.25mm. This seems very likely to be true! But it's a uniform distribution, so we're saying that all values in that range are equally plausible, which maybe seems unnecessarily permissive.
+
+To make things a bit more restrictive, we could instead assume that mean flipper length is drawn from a normal distribution, where extreme values are less likely. For example:
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 500, sd = 250)
+```
+
+So this prior says that mean flipper length should be between about 10cm and about 99cm. Because the standard deviation here is quite high, this distribution is going to be fairly spread out around the mean, which is good if we're only trying to be weakly regularising. We can see the spread by visualising the distribution: I've chosen the range on the x-axis by adding/subtracting 3 standard deviations from the mean, which I know (thanks to maths) is going to include 99% of the probability mass.
+
+```{r}
+m = 500
+sd = 250
+
+ggplot(tibble(x = c(m-(3*sd), m+(3*sd))), aes(x = x)) +
+  stat_function(fun = dnorm, args = list(mean = m, sd = sd)) +
+  labs(x = "flipper length (mm)")
+```
+
+This looks a bit better: completely implausible values have very low probability, but we're fairly permissive about other values.
+
+However, you may have noticed that the mean of this distribution seems much too high given the data we actually have:
+
+```{r}
+penguins$flipper_length_mm %>% summary()
+```
+
+There is a delicate balancing act here: we want our prior to be on the right order of magnitude, but we don't want our model to overfit to this specific dataset in case we collect data from a much larger penguin species in future and want to be able to use the same statistical models to analyse that data. Priors are also meant to be exactly that: our *prior* expectations *before* observing any data.
+
+There's no single correct answer, but I suggest that we stick with a normal distribution (the central limit theorem tells us that sample means will tend to be normally distributed, so this makes sense for a prior on the mean) but shift it a bit further to the left to be more in line with the properties of the penguin species we're dealing with here. For example:
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 250, sd = 125)
+```
+
+```{r}
+# Visualise this prior distribution here
+```
+
+### A prior for sigma (standard deviation of flipper lengths)
+
+Standard deviations can only be positive, but luckily, `brms` is clever and knows this, so we have to worry even less about whether the normal distribution is *technically* a valid choice than we did for the mean.
+
+However, because `brms` is going to do some truncating under the hood, if we want to see what kinds of values different priors would correspond to, we do need to use the `q` function for the *truncated* normal distribution: `qtnorm`. This distribution has four parameters: mean, sd, a (the lower bound) and b (the upper bound). We're just going to specify a lower bound in this case.
+
+For example:
+
+```{r}
+qtnorm(c(0.025, 0.975), mean = 0, sd = 100, a = 0)
+```
+
+This prior on sigma sets an expectation that the standard deviation of flipper sizes should be in the above range (still on the mm scale). This seems fine to me, but feel free to try playing around with a few different values!
+
+```{r}
+# Visualise your prior on sigma here - remember to use the right function for the truncated normal distribution!
+```
+
+
+### A prior for beta (the difference between male and female penguins)
+
+Ok, so this is the effect of interest: the main effect of sex. We know that this parameter will have to have much smaller values than the mean flipper length itself, because the difference between male and female penguins is not likely to be on the order of magnitude of one whole flipper! However, we may not want to set a really specific prior on which direction the effect will go in i.e. we might want to allow for male flipper length to be greater than female flipper length, or vice versa.
+
+The fact that we want to allow this parameter to take either positive or negative values means we're definitely justified in using a normal distribution this time, hurrah! For example:
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 0, sd = 100)
+```
+
+So this prior says that we don't know which direction the effect will go in, but we expect the difference between male and female penguins to be in the above range (still on the mm scale). This seems pretty sensible: very small differences (close to 0) are going to have highest prior probability, but much bigger differences are possible. However, you could make this prior even wider if you like: try playing around with a few different values!
+
+```{r}
+# Visualise your prior on beta here
+```
+
+
+## Prior predictive checks
+
+Before we dive in to running the model, we want to check that the priors we've chosen generate data that looks vaguely sensible. Enter: prior predictive checks.
+
+`brms` gives us a way of generating simulated data from our priors, by using all the same syntax as we're going to use for the real model but adding one extra argument to make it ignore the actual data. The basic template for a prior predictive check is as follows:
+
+``` 
+brm(
+  my_outcome ~ my_predictor,
+  data = my_data,
+  family = gaussian(),
+  prior = c(
+    prior(SOMETHING, class = Intercept),
+    prior(SOMETHING, class = sigma),
+    prior(SOMETHING, class = b, coef = my_colname)
+  ),
+  sample_prior = "only"
+)
+```
+
+-   The first argument is the model formula in `lme4` syntax.
+-   The `data=` argument names the data frame where the data to analyse can be found.
+-   The `family=` argument defines the model family: in this case, we're using a normal likelihood, so we want `gaussian()` (this is the default so you can leave this argument out if you like, but I think it's good to be explicit for our own sake).
+-   The `prior=` argument defines the priors that the model will use. If there is no `prior=` argument, the model will use the default priors (more on this later!).
+-   The line `sample_prior = "only"` is what makes this model into a *prior* predictive model: it ignores the data and uses only the priors to estimate the posteriors (basically just reproducing the priors). Removing this line will cause the model to take the data into account when estimating posteriors, and we’ll do this when we properly fit the model.
+
+So here's the prior predictive model for the priors I chose above -- feel free to adapt this if you'd prefer different priors! Note that if you want to use a uniform prior on any parameter, you'll need to also specify `lb=` and `ub=` (lower bound and upper bound respectively) as additional arguments to `prior()`.
+
+```{r}
+prior_pred <- brm(
+  flipper_length_mm ~ sex_contrsum,
+  data = penguins,
+  family = gaussian(),
+  prior = c(
+    prior(normal(250, 125), class = Intercept),
+    prior(normal(0, 100), class = sigma),
+    prior(normal(0, 100), class = b, coef = sex_contrsum)
+  ),
+  sample_prior = "only",
+  refresh = 0 # this prevents brms from printing a lot of unnecessary output: you'll still see warnings if relevant (e.g. non-convergence)
+)
+```
+
+This model has estimated posteriors that reproduce the priors, ignoring the data, so we can use these posteriors to generate some new data and see whether it look reasonable.
+
+Generating predictive data is such a common thing to do that `brms` comes with a useful function that helps us do it graphically: `pp_check()`. It takes the following arguments:
+
+-   A model object.
+-   `type = "stat"` is one possible type of plot, which applies some summary statistic to the generated data.
+-   `stat = mean` says that our summary statistic is going to be the function `mean()`.
+-   `prefix = "ppd"` hides the observed data, which is shown by default, displaying only the predictive distributions (“ppd” = “prior predictive distribution”). It doesn’t make sense to include the data in the plot, because our prior predictive model didn’t take it into account.
+
+We can also add any of the usual ggplot layers to the plot!
+
+```{r}
+pp_check(
+  prior_pred,
+  type = "stat",
+  stat = mean,
+  prefix = "ppd"
+) +
+  labs(x = "flipper_length_mm", title = "Prior predictive distribution means")
+```
+
+## Summary of the model-building workflow
+
+1.    Find a **likelihood** suitable for the outcome data.
+2.    Identify the **parameters** required by the likelihood and by the line you want to fit.
+3.    Use the `q` functions and prior predictive checks to find plausible **priors** for each of those parameters.
+
+# Fitting the model!
+
+Ok, we're finally ready to fit the model! To do this, you can copy the model code from above with the priors you settled on and just remove the line that tells it to sample only from the prior. Call your model `flipper_fit`. 
+
+```{r}
+# Fit your model here
+```
+
+## Checking convergence
+
+Recall from last week that the Markov Chain Monte Carlo chains that sample from the posterior are moving around the posterior landscape, trying to find where the bulk of the probability mass is. Sometimes they might never find it, or might not do so reliably. When the chains don’t properly sample from the posterior, we say the model has not converged.
+
+Ideally, the chains will "mix": in other words, all four chains will be sampling from the same region of the posterior. There are a couple of ways to tell that the chains are mixing properly.
+
+### Trace plots
+
+First, run the following code to produce so-called "trace-plots".
+
+```{r}
+mcmc_trace(flipper_fit, pars = c("b_Intercept", "b_sex_contrsum"))
+```
+
+Trace plots track where the four chains were as they traversed the posterior during sampling. The y axis represents the values of the posterior, and the x axis shows the sample indices (each chain drew 1,000 samples). If the chains mixed well, then the trace plots should look like “fat hairy caterpillars”. And these ones do!
+
+If you see trace plots where chains aren't overlapping as densely, or even worse, where some chains have wandered off in a completely different direction and never mingled with the others, you should be worried (although probably `brms` will also have warned you of non-convergence in this case).
+
+### Rhats
+
+The second thing to check is more quantitative. For each parameter, the model gives us a diagnostic measure called Rhat. Rhat is a measure of how well the chains have mixed. It compares the estimates within chains and between chains, and if the chains have mixed well, then the result should be near 1. We consider the model to have converged if all Rhat values are equal to 1.00; even an Rhat of 1.01 should make you suspicious.
+
+Run the following code to see the model summary: you're looking for a column called Rhat.
+
+```{r}
+summary(flipper_fit)
+```
+
+If there is any Rhat value greater than 1.00, it means that the chains didn’t mix well enough and we cannot trust the posterior estimates we’ve been given. If you do ever fit a model that yields Rhat > 1.00, [this page](https://mc-stan.org/misc/warnings.html) offers some solutions you could try.
+
+### Posterior predictive checks
+
+The final check we want to run on our model is a posterior predictive check. We’ve encountered the concept of predictive checks before: with prior predictive checks, we drew sample values from each parameter’s prior, used those values to define the likelihood, and used that likelihood to generate simulated outcomes. Now, with posterior predictive checks, we're going to draw sample values from each parameter’s posterior, and use them to do the exact same thing.
+
+In fact, the processes are so similar that we can use `pp_check()` again to give us the means of the posterior predictive distributions, and compare them to the mean of the observed data (which is included by default if you don't specify `prefix = "ppd"`):
+
+```{r}
+# Run pp_check on your fitted model here - remember to remove the prefix argument to make this into a *posterior* predictive distribution
+```
+
+With the priors I used, the mean of the observed data (the dark vertical line) is smack in the middle of the posterior predictive distribution of means -- hurray! That’s what we want to see. A little bit off to either side is also OK, but if the observed data were far away from the bulk of the posterior predictive distribution, that would suggest that we might want to change the model architecture to better reflect the generative process behind the data.
+
+# Interpreting and reporting model results
+
+Reassured that our model does a decent job of capturing the data, let's now delve into the actual estimates given by `summary()`.
+
+-   Under `Estimate`, we get the mean of the posterior distribution of each parameter.
+-   Under `Est.Error`, we get the standard deviation.
+-   Under `l-95% CI`, we get the 2.5th quantile of the posterior (the lower bound of the 95% Credible Interval).
+-   Under `h-95% CI`, we get the 97.5th quantile of the posterior (the upper bound of the 95% Credible Interval).
+
+```{r}
+summary(flipper_fit)
+```
+
+You can also use the `fixef()` function to extract only the posterior summaries of the fixed effects.
+
+```{r}
+fixef(flipper_fit)
+```
+
+Let's look at those estimates individually to understand what they mean.
+
+## Interpreting coefficient estimates
+
+First, the intercept. This is the model's estimate for mean flipper length across male and female penguins (because we used sum coding; if we had stuck with the default treatment coding, this would have been the estimate for the 'reference level'). With the priors I used, estimated mean flipper length is 200.94mm (95% CrI: [199.45, 202.39]).
+
+Because the posterior is a distribution of belief over plausible parameter values, this means that the model thinks there’s a 95% probability that the intercept of this model is between 199.45 and 202.39. The model is also very certain that this is a positive effect: the mass of the posterior distribution is nowhere near zero. This makes sense since flipper length can't be negative!
+
+We can also visualise the posterior distribution as a density plot:
+
+```{r}
+mcmc_dens(flipper_fit, pars = "b_Intercept") +
+  labs(title = "Posterior distribution of b_Intercept")
+```
+
+Next, the coefficient for sex. With the priors I used, the mean effect of sex (i.e. the difference between male and female penguins) is -7.17 (95% CrI: [-10.13, -4.22]). Because the entire 95% CrI is negative, the model is quite certain that this is a negative effect: female penguins have smaller flippers than male penguins. However, this is (as expected) a much smaller effect than the mean itself.
+
+```{r}
+# Visualise the posterior distribution for this coefficient here
+```
+
+We can also look at any or all posterior distributions with their means and 95% CrI highlighted using `mcmc_areas()` -- if you show both parameters on this plot it will be a bit hard to see the shading (because they're on quite different scales), but this can work really nicely for some models where parameters are a bit closer together. You could also use this function to look at each parameter individually.
+
+```{r}
+mcmc_areas(flipper_fit, 
+           pars = c("b_Intercept", "b_sex_contrsum"), # add/remove terms as desired
+           prob = 0.95) +
+  geom_vline(xintercept = 0, linetype = 'dotted')
+```
+
+## Reporting the results
+
+If you were going to write this model up for a paper, here's how you might report it.
+
+> We fit a Bayesian linear model with a normal likelihood predicting flipper length (in millimetres) as a function of sex. The model used weakly regularising priors which we selected based on prior predictive checks. The model converged (as indicated by all Rhats = 1).
+
+> The model estimates a negative effect of sex ($\beta$ = -7.17, 95% CrI [-10.13, -4.22]) meaning that female penguins have shorter flippers on average than male penguins.
+
+You can also use the `xtable` library to generate a LaTeX version of your model summary as a table:
+
+```{r}
+library(xtable)
+xtable(fixef(flipper_fit))
+```
+
+# Bonus exercise: understanding default priors
+
+I mentioned above that if you leave out the `prior=` argument when fitting a model, `brms` will use its default priors. These will differ from model to model depending on the model family and the properties of your data, but you can always find out what they are for your specific model.
+
+There's two ways to do this. Either, before actually running the model, you can pass the model specification into the `get_prior()` function:
+
+```{r}
+get_prior(flipper_length_mm ~ sex_contrsum,
+  data = penguins,
+  family = gaussian())
+```
+
+Or, you can also fit rhw model with default priors and then pass that model object into the `prior_summary()` function: you'll get the same output from these two methods.
+
+Ok, so here's what this output is telling us:
+
+-   The model is going to use flat (i.e. uniform) priors on all slope coefficients (class = b). Here, we only have one (sex_contrsum), which gets its own row just in case you weren't sure that it came under that 'all slope coefficients' group. If you added other predictors, you would also see rows for each of those with their column names under `coef`.
+-   The prior on the intercept (mean flipper length) is a scaled and shifted Student's t-distribution with degrees of freedom ($\nu$) = 3, mean = 197 and standard deviation = 16.3. Student's t is very similar to the normal distribution but has heavier tails. The amount of probability mass in the tails is given by the degrees of freedom: smaller numbers result in heavier tails.
+- The prior on sigma (the standard deviation of flipper lengths) is very similar, but with mean = 0 and lb (lower bound) = 0, because standard deviations can only be positive.
+
+The flat priors aren't very interesting, but let's get an idea of what this Student's t-distribution looks like. We can inspect it in the same way as we were doing for normal distributions earlier.
+
+```{r}
+df = 3
+m = 197
+sd = 16.3
+
+ggplot(tibble(x = c(m-(3*sd), m+(3*sd))), aes(x = x)) +
+  stat_function(fun = dstudent_t, args = list(df = df, mu = m, sigma = sd)) +
+  labs(x = "flipper length (mm)")
+```
+
+```{r}
+qstudent_t(c(0.025, 0.975), df=3, mu=197, sigma=16.3)
+```
+
+From the plot and the 95% credible interval, we can see that the extra weight in the tails means that this distribution encodes less certainty than a normal distribution *in the range it covers*, but because `brms` has picked a pretty low value for sigma, that range is much narrower than in the prior we used. You might be worried that it's too restrictive given our lack of prior knowledge about penguins. Let's see how it affects the model!
+
+Run the same model as before but remove the prior specification. Call your model `flipper_fit_default`.
+
+```{r}
+# Fit your model here
+```
+
+Now inspect the model: remember to check the trace plots and Rhats and run a posterior predictive check before diving straight into the model estimates.
+
+```{r}
+# Check model convergence and posterior predictive distribution
+```
+
+```{r}
+summary(flipper_fit_default)
+```
+
+Recall that my model with user-defined priors had the following coefficient estimates:
+
+-   Intercept: 200.94 (95% CrI: [199.45, 202.39])
+-   Main effect of sex: -7.17 (95% CrI: [-10.13, -4.22])
+
+The estimates of the model with default priors are, I think you'll agree, strikingly similar. What does this tell us? Well, it seems like the influence of the prior is pretty minimal: probably there's just so much data that the likelihood is dominating in determining the shape of the posterior. 
+
+If you want to play more with this, you could try filtering the data down to fewer rows (e.g. just look at the penguins on Torgersen island) and compare models with user-defined vs. default priors: remember that priors have more of an influence a) when there's less data and b) when they're more informative. If you want to get really advanced, you can read more about [prior sensitivity analyses](https://doi.org/10.3389/fpsyg.2020.608045).
+
+# Bonus exercise: adding other predictors
+
+Obviously, the model we've been looking at so far is extremely simple: we only have one categorical predictor with two levels. There's other columns in this dataset we might want to use as predictors: for example, maybe body mass is a better predictor of flipper length than sex. Try adding some more predictors to the model and think about how you'd interpret the coefficients. Remember: every parameter (including any interaction terms) needs a prior!
+
+```{r}
+# Your code here
+```
+
+Once you get into multiple regression territory, it can be helpful to see coefficient estimates for each level of each predictor rather than trying to intuit that from `summary()`. You can do this by passing your model into the `ggpredict()` function from the `ggeffects` package. Here's an example for the model we built earlier:
+
+```{r}
+library(ggeffects)
+ggpredict(flipper_fit)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
