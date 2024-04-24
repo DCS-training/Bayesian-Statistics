@@ -382,7 +382,7 @@ get_prior(flipper_length_mm ~ sex_contrsum,
   family = gaussian())
 ```
 
-Or, you can also fit rhw model with default priors and then pass that model object into the `prior_summary()` function: you'll get the same output from these two methods.
+Or, you can also fit the model with default priors and then pass that model object into the `prior_summary()` function: you'll get the same output from these two methods.
 
 Ok, so here's what this output is telling us:
 
