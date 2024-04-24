@@ -73,5 +73,8 @@ Materials for the practical class (Week 2) are in the folder `practical`: you ca
 - [An Introduction to Bayesian Data Analysis for Cognitive Science](https://vasishth.github.io/bayescogsci/book/) by Bruno Nicenboim, Daniel Schad, and Shravan Vasishth.
 - [A Student's Guide to Bayesian Statistics](https://uk.sagepub.com/en-gb/eur/book/student%E2%80%99s-guide-bayesian-statistics) by Ben Lambert.
 
+## Feedback
+
+If you attended this course in April 2024, please fill in our [feedback form](https://forms.office.com/r/YYNrqvuNr8).
 
 [![License: CC BY-NC 4.0](https://licensebuttons.net/l/by-nc/4.0/80x15.png)](https://creativecommons.org/licenses/by-nc/4.0/)
