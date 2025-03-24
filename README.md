@@ -1,6 +1,6 @@
 # Introduction to Bayesian Statistics
 
-**Date**: April 2024
+**Date**: March 2025
 
 **Author**: Aislinn Keogh
 
@@ -50,7 +50,7 @@ install.packages("extraDistr")
 install.packages("tidyverse")
 ```
 
-If you get any error messages for any of these installs that you can't resolve by googling, please post in the Teams group to get help.
+If you get any error messages for any of these installs that you can't resolve by googling, please post in the Teams chat to get help.
 
 ### C++ compiler
 
@@ -75,6 +75,6 @@ Materials for the practical class (Week 2) are in the folder `practical`: you ca
 
 ## Feedback
 
-If you attended this course in April 2024, please fill in our [feedback form](https://forms.office.com/r/YYNrqvuNr8).
+If you attended this course in March 2025, please fill in our [feedback form](https://forms.office.com/r/YYNrqvuNr8).
 
 [![License: CC BY-NC 4.0](https://licensebuttons.net/l/by-nc/4.0/80x15.png)](https://creativecommons.org/licenses/by-nc/4.0/)
