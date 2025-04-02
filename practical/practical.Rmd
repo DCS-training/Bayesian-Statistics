@@ -52,7 +52,7 @@ penguins <- penguins %>% drop_na()
 
 There's a few things we could model in this dataset, but I've picked an easy research question to get us started: does flipper length depend on sex?
 
-To set us up to answer this question, I'm first going to add a new column to the dataset which centres the predictor using ±0.5 sum coding (for more on contrast coding, see [here](https://vasishth.github.io/bayescogsci/book/ch-contr.html)). There are other ways to set contrasts without creating whole new columns (e.g. using `contr.sum(2)/2`) but it can be easier to interpret model output if you force yourself to be more explicit. If you don't specify contrasts, `brms` will default to treatment coding (like `lme4`).
+To set us up to answer this question, I'm first going to add a new column to the dataset which centres the predictor using ±0.5 sum coding (for more on contrast coding, see [here](https://bruno.nicenboim.me/bayescogsci/ch-contr.html)). There are other ways to set contrasts without creating whole new columns (e.g. using `contr.sum(2)/2`) but it can be easier to interpret model output if you force yourself to be more explicit. If you don't specify contrasts, `brms` will default to treatment coding (like `lme4`).
 
 ```{r}
 penguins <- penguins %>% 
