@@ -108,10 +108,10 @@ To get an idea of what kind of values a particular prior would permit your param
 In this case, we want the `qunif` function for the uniform distribution. The uniform distribution has two parameters: min (the lower bound) and max (the upper bound).
 
 ```{r}
-qunif(c(0.025, 0.975), min = 10, max = 1000)
+qunif(c(0.025, 0.975), min = 50, max = 1000)
 ```
 
-So this output tells us that such a prior defines an expectation that mean flipper length should be between 34.75mm and 975.25mm. This seems very likely to be true! But it's a uniform distribution, so we're saying that all values in that range are equally plausible, which maybe seems unnecessarily permissive.
+So this output tells us that such a prior defines an expectation that mean flipper length should be between 73.75mm and 976.25mm. This seems very likely to be true! But it's a uniform distribution, so we're saying that all values in that range are equally plausible, which maybe seems unnecessarily permissive.
 
 To make things a bit more restrictive, we could instead assume that mean flipper length is drawn from a normal distribution, where extreme values are less likely. For example:
 
