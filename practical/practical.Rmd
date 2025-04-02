@@ -313,7 +313,7 @@ Reassured that our model does a decent job of capturing the data, let's now delv
 -   Under `Estimate`, we get the mean of the posterior distribution of each parameter.
 -   Under `Est.Error`, we get the standard deviation.
 -   Under `l-95% CI`, we get the 2.5th quantile of the posterior (the lower bound of the 95% Credible Interval).
--   Under `h-95% CI`, we get the 97.5th quantile of the posterior (the upper bound of the 95% Credible Interval).
+-   Under `u-95% CI`, we get the 97.5th quantile of the posterior (the upper bound of the 95% Credible Interval).
 
 ```{r}
 summary(flipper_fit)
